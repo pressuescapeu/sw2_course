@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"sw2_hw3/internal/models"
-	"time"
+	"sw2_hw3/internal/utils"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -116,15 +116,10 @@ func (storage *Storage) GetScheduleByGroupID(ctx context.Context, id int) ([]mod
 	return schedules, rows.Err()
 }
 
-func stringDateIntoTimeDate(input string) (time.Time, error) {
-	// idk some go magic date stuff - 2nd jan 2006
-	return time.Parse("02.01.2006", input)
-}
-
 // GetScheduleByDateAndCourseID - helper function for marking attendance
 func (storage *Storage) getScheduleByDateAndCourseID(ctx context.Context,
 	courseID int, visitDay string) ([]models.Schedule, error) {
-	visitDate, err := stringDateIntoTimeDate(visitDay)
+	visitDate, err := utils.StringDateIntoTimeDate(visitDay)
 	if err != nil {
 		return nil, err
 	}
@@ -170,11 +165,11 @@ func (storage *Storage) MarkAttendance(ctx context.Context,
 	}
 	// also check if schedules is just empty
 	if l := len(schedules); l == 0 {
-		return errors.New("no schedule found to mark this attendance")
+		return utils.ErrNoScheduleFound
 	}
 
 	const query = `INSERT INTO attendance (course_id, date, visited, student_id) VALUES ($1, $2, $3, $4);`
-	visitDate, err := stringDateIntoTimeDate(visitDay)
+	visitDate, err := utils.StringDateIntoTimeDate(visitDay)
 	if err != nil {
 		return err
 	}
@@ -193,7 +188,7 @@ func (storage *Storage) MarkAttendance(ctx context.Context,
 
 func (storage *Storage) GetAttendanceByCourseID(ctx context.Context,
 	id int) ([]models.AttendanceByCourseIDBody, error) {
-	const query = `SELECT student_id, date, visited FROM attendance WHERE course_id = $1;`
+	const query = `SELECT student_id, TO_CHAR(date, 'DD.MM.YYYY'), visited FROM attendance WHERE course_id = $1 ORDER BY date DESC LIMIT 5;`
 
 	rows, err := storage.pool.Query(ctx, query, id)
 	if err != nil {
@@ -223,7 +218,8 @@ func (storage *Storage) GetAttendanceByCourseID(ctx context.Context,
 // GetAttendanceByStudentID - almost identical to the prev one
 func (storage *Storage) GetAttendanceByStudentID(ctx context.Context,
 	id int) ([]models.AttendanceByStudentIDBody, error) {
-	const query = `SELECT course_id, date, visited FROM attendance WHERE student_id = $1;`
+	// added proper formatting for date bc we have a different format
+	const query = `SELECT course_id, TO_CHAR(date, 'DD.MM.YYYY'), visited FROM attendance WHERE student_id = $1 ORDER BY date DESC LIMIT 5;`
 
 	rows, err := storage.pool.Query(ctx, query, id)
 	if err != nil {

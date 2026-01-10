@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"strconv"
 	"sw2_hw3/internal/models"
 	"sw2_hw3/internal/storage/postgres"
+	"sw2_hw3/internal/utils"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
@@ -81,6 +84,15 @@ func main() {
 		// here we mark attendance - Date will be string, and converted later in postgres.go
 		err := storage.MarkAttendance(context.Background(), reqBody.CourseID, reqBody.Date, reqBody.Visited, reqBody.StudentID)
 		if err != nil {
+			// type of error in case user puts in invalid date format
+			var timeParseErr *time.ParseError
+			if err == utils.ErrNoScheduleFound {
+				// 400 bc user put in wrong info about attendance
+				return c.JSON(http.StatusBadRequest, err.Error())
+			} else if errors.As(err, &timeParseErr) {
+				// 400 bc user put in invalid date and then utils couldn't parse
+				return c.JSON(http.StatusBadRequest, "invalid date format, expected DD.MM.YYYY")
+			}
 			// return 500 with error
 			return c.JSON(http.StatusInternalServerError, err.Error())
 		}
