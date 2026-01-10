@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"sw2_hw3/internal/models"
 	"sw2_hw3/internal/storage/postgres"
 
 	"github.com/joho/godotenv"
@@ -70,7 +71,48 @@ func main() {
 		return c.JSON(http.StatusOK, schedules)
 	})
 
-	// TODO: POST /attendance/subject - body {subject_id, visit_day, visited (boolean), student_id}
+	e.POST("/attendance/subject", func(c echo.Context) error {
+		var reqBody models.AttendanceBody
+		// Bind will unmarshall it into the interface of AttendanceBody
+		if err := c.Bind(&reqBody); err != nil {
+			// return a 400 with error
+			return c.JSON(http.StatusBadRequest, err.Error())
+		}
+		// here we mark attendance - Date will be string, and converted later in postgres.go
+		err := storage.MarkAttendance(context.Background(), reqBody.CourseID, reqBody.Date, reqBody.Visited, reqBody.StudentID)
+		if err != nil {
+			// return 500 with error
+			return c.JSON(http.StatusInternalServerError, err.Error())
+		}
+		// return 201 with a success message
+		return c.JSON(http.StatusCreated, "attendance marked successfully")
+	})
+
+	e.GET("/attendanceBySubjectId/:id", func(c echo.Context) error {
+		id := c.Param("id")
+		courseID, err := strconv.Atoi(id)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, "invalid id")
+		}
+		attendances, err := storage.GetAttendanceByCourseID(context.Background(), courseID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, err.Error())
+		}
+		return c.JSON(http.StatusOK, attendances)
+	})
+
+	e.GET("/attendanceByStudentId/:id", func(c echo.Context) error {
+		id := c.Param("id")
+		studentID, err := strconv.Atoi(id)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, "invalid id")
+		}
+		attendances, err := storage.GetAttendanceByStudentID(context.Background(), studentID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, err.Error())
+		}
+		return c.JSON(http.StatusOK, attendances)
+	})
 
 	e.Logger.Fatal(e.Start(":1323"))
 }
