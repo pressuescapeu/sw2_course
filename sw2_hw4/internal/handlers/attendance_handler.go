@@ -28,7 +28,8 @@ func CreateAttendanceInstance(storage *postgres.Storage) echo.HandlerFunc {
 		err := storage.MarkAttendance(context.Background(), reqBody.CourseID, reqBody.Date, reqBody.Visited, reqBody.StudentID)
 		if err != nil {
 			var timeParseErr *time.ParseError
-			if errors.Is(err, utils.ErrNoScheduleFound) {
+			if errors.Is(err, utils.ErrNoScheduleFound) || errors.Is(err, utils.ErrDuplicateAttendance) ||
+				errors.Is(err, utils.ErrNonExistingStudent) || errors.Is(err, utils.ErrStudentNotEnrolled) {
 				return c.JSON(http.StatusBadRequest, err.Error())
 			} else if errors.As(err, &timeParseErr) {
 				return c.JSON(http.StatusBadRequest, "invalid date format, expected DD.MM.YYYY")

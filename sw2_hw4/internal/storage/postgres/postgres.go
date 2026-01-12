@@ -110,55 +110,90 @@ func (storage *Storage) GetScheduleByGroupID(ctx context.Context, id int) ([]mod
 	return schedules, rows.Err()
 }
 
-// getScheduleByDateAndCourseID - helper function for marking attendance
-func (storage *Storage) getScheduleByDateAndCourseID(ctx context.Context,
-	courseID int, visitDay string) ([]models.Schedule, error) {
+func (storage *Storage) validateAttendanceRequest(ctx context.Context,
+	courseID int, visitDay string, studentID int) error {
+	visitDate, err := utils.StringDateIntoTimeDate(visitDay)
+
+	if err != nil {
+		return err
+	}
+
+	const query = `SELECT 
+		EXISTS( SELECT id FROM students WHERE id = $1 ) AS student_exists,
+		EXISTS( SELECT course_id, date FROM schedule WHERE course_id = $2 AND date = $3 ) AS schedule_exists,
+		EXISTS( SELECT student_id, course_id FROM student_courses WHERE course_id = $2 AND student_id = $1 ) AS student_enrolled;
+	`
+
+	var studentExists, scheduleExists, studentEnrolled bool
+	err = storage.pool.QueryRow(ctx, query, studentID, courseID, visitDate).Scan(&studentExists, &scheduleExists, &studentEnrolled)
+	if err != nil {
+		return err
+	}
+	if !studentExists {
+		return utils.ErrNonExistingStudent
+	}
+	if !scheduleExists {
+		return utils.ErrNoScheduleFound
+	}
+	if !studentEnrolled {
+		return utils.ErrStudentNotEnrolled
+	}
+	return nil
+}
+
+func (storage *Storage) getDuplicateAttendanceInstance(ctx context.Context,
+	courseID int, visitDay string, visited bool, studentID int) ([]models.AttendanceBody, error) {
 	visitDate, err := utils.StringDateIntoTimeDate(visitDay)
 	if err != nil {
 		return nil, err
 	}
-	const query = `SELECT * FROM schedule WHERE course_id = $1 AND date = $2;`
 
-	rows, err := storage.pool.Query(ctx, query, courseID, visitDate)
+	const query = `SELECT course_id, TO_CHAR(date, 'DD.MM.YYYY'), visited, student_id FROM attendance WHERE course_id = $1 AND date = $2 AND visited = $3 AND student_id = $4;`
+	rows, err := storage.pool.Query(ctx, query, courseID, visitDate, visited, studentID)
+
 	if err != nil {
 		return nil, err
 	}
 
 	defer rows.Close()
 
-	var schedules []models.Schedule
+	var attendances []models.AttendanceBody
 
 	for rows.Next() {
-		var schedule models.Schedule
+		var attendance models.AttendanceBody
 		err = rows.Scan(
-			&schedule.ID,
-			&schedule.CourseID,
-			&schedule.GroupID,
-			&schedule.Date,
-			&schedule.StartTime,
-			&schedule.EndTime,
+			&attendance.CourseID,
+			&attendance.Date,
+			&attendance.Visited,
+			&attendance.StudentID,
 		)
 
 		if err != nil {
 			return nil, err
 		}
 
-		schedules = append(schedules, schedule)
+		attendances = append(attendances, attendance)
 	}
 
-	return schedules, rows.Err()
+	return attendances, rows.Err()
 }
 
 func (storage *Storage) MarkAttendance(ctx context.Context,
 	courseID int, visitDay string, visited bool, studentID int) error {
-	schedules, err := storage.getScheduleByDateAndCourseID(ctx, courseID, visitDay)
+	err := storage.validateAttendanceRequest(ctx, courseID, visitDay, studentID)
 
 	if err != nil {
 		return err
 	}
 
-	if l := len(schedules); l == 0 {
-		return utils.ErrNoScheduleFound
+	attendances, err := storage.getDuplicateAttendanceInstance(ctx, courseID, visitDay, visited, studentID)
+
+	if err != nil {
+		return err
+	}
+
+	if l := len(attendances); l != 0 {
+		return utils.ErrDuplicateAttendance
 	}
 
 	const query = `INSERT INTO attendance (course_id, date, visited, student_id) VALUES ($1, $2, $3, $4);`
