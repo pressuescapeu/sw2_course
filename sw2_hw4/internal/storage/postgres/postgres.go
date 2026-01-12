@@ -26,13 +26,9 @@ func NewConnection(connString string) (*Storage, error) {
 	}, nil
 }
 
-// GetStudentByID uses ctx to manage request lifecycle, uses Background in main
 func (storage *Storage) GetStudentByID(ctx context.Context, id int) (*models.Student, error) {
-	const query = `
-		SELECT * FROM students s WHERE s.id = $1;
-	`
+	const query = `SELECT * FROM students s WHERE s.id = $1;`
 	var student models.Student
-	// QueryRow returns only one row so we scan right away
 	err := storage.pool.QueryRow(ctx, query, id).Scan(
 		&student.ID,
 		&student.FirstName,
@@ -52,7 +48,6 @@ func (storage *Storage) GetStudentByID(ctx context.Context, id int) (*models.Stu
 
 func (storage *Storage) GetScheduleForAll(ctx context.Context) ([]models.Schedule, error) {
 	const query = `SELECT * FROM schedule;`
-	// Query() returns multiple rows so we save them as rows
 	rows, err := storage.pool.Query(ctx, query)
 	if err != nil {
 		return nil, err
@@ -61,7 +56,6 @@ func (storage *Storage) GetScheduleForAll(ctx context.Context) ([]models.Schedul
 	defer rows.Close()
 
 	var schedules []models.Schedule
-	// then we parse these rows one by one and add to schedules slice
 	for rows.Next() {
 		var schedule models.Schedule
 		err = rows.Scan(
@@ -116,14 +110,13 @@ func (storage *Storage) GetScheduleByGroupID(ctx context.Context, id int) ([]mod
 	return schedules, rows.Err()
 }
 
-// GetScheduleByDateAndCourseID - helper function for marking attendance
+// getScheduleByDateAndCourseID - helper function for marking attendance
 func (storage *Storage) getScheduleByDateAndCourseID(ctx context.Context,
 	courseID int, visitDay string) ([]models.Schedule, error) {
 	visitDate, err := utils.StringDateIntoTimeDate(visitDay)
 	if err != nil {
 		return nil, err
 	}
-	// first check if there even is a schedule instance like this
 	const query = `SELECT * FROM schedule WHERE course_id = $1 AND date = $2;`
 
 	rows, err := storage.pool.Query(ctx, query, courseID, visitDate)
@@ -163,7 +156,7 @@ func (storage *Storage) MarkAttendance(ctx context.Context,
 	if err != nil {
 		return err
 	}
-	// also check if schedules is just empty
+
 	if l := len(schedules); l == 0 {
 		return utils.ErrNoScheduleFound
 	}
@@ -218,7 +211,6 @@ func (storage *Storage) GetAttendanceByCourseID(ctx context.Context,
 // GetAttendanceByStudentID - almost identical to the prev one
 func (storage *Storage) GetAttendanceByStudentID(ctx context.Context,
 	id int) ([]models.AttendanceByStudentIDBody, error) {
-	// added proper formatting for date bc we have a different format
 	const query = `SELECT course_id, TO_CHAR(date, 'DD.MM.YYYY'), visited FROM attendance WHERE student_id = $1 ORDER BY date DESC LIMIT 5;`
 
 	rows, err := storage.pool.Query(ctx, query, id)
